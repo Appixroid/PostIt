@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html class="full-size" lang="en">
+	<head>
+		<!-- Metadata -->
+		<title>Post-It</title>
+		<meta charset="UTF-8" />
+		<link rel="icon" type="image/x-icon" href="favicon.ico" />
+		
+		<!-- Drawers API -->
+		<link rel="stylesheet" href="https://cdn.louis-parent.fr/drawers/style/?f=background+sizing+utils+positioning+bordering+coloring+visibility+depth+cursor+transforming+text+layout"/>
+		<script src="https://cdn.louis-parent.fr/drawers/script/?f=movable+resizable+color-picker+confirm+context"></script>
+		
+		<style>
+			:root
+			{
+				font-family: sans-serif;
+			}
+			
+			.resizer
+			{
+				width: 0; 
+				height: 0; 
+				
+				border-top: 12px solid transparent;
+				border-bottom: 12px solid transparent;
+  
+				border-left: 12px solid rgba(127, 127, 127, 0.5);
+				
+				transform: rotate(45deg) translate(7px, 5px);
+			}
+		</style>
+		
+		<script>			
+			var id = 0;
+			
+			const STORAGE = window.localStorage;
+			const POST_ITS_ITEM = "postits";
+			
+			const POST_IT_CLASS = "post-it";
+			const CONTENT_ID_PREFIX = "content-";
+			const CONTENT_CLASS = "content";
+			const GRABBER_CLASS = "grabber";
+			const RESIZER_CLASS = "resizer";
+			const PICKER_CLASS = "picker";
+			const PICKER_ID_PREFIX = "picker-";
+			const TRASH_CLASS = "trash";
+			
+			const DRAWERS = window.getDrawersInstance();
+			const MOVABLE = DRAWERS.getDrawer("movable");
+			const RESIZABLE = DRAWERS.getDrawer("resizable");
+			const PICKER = DRAWERS.getDrawer("color-picker");
+			const CONTEXT = DRAWERS.getDrawer("context");
+			
+			var postitContext = new ContextMenu("postIt");
+			postitContext.addItem(new ContextMenuItem("Change Color", (target) => { target.getElementsByClassName(PICKER_CLASS)[0].click(); }, "assets/color-picker.png"));
+			postitContext.addSeparator();
+			postitContext.addItem(new ContextMenuItem("Delete Post-It", (target) => { target.getElementsByClassName(TRASH_CLASS)[0].click(); }, "assets/trash.png"));
+			postitContext.addSeparator();
+			postitContext.addItem(new ContextMenuItem("Create Post-It", (target, x, y) => {
+				let postIt = DEFAULT_POST_IT;
+				postIt.x = x;
+				postIt.y = y;
+				createPostit(postIt);
+			}, "assets/postit.png"));
+			CONTEXT.addContextMenu(postitContext);
+			
+			var globalContext = new ContextMenu("global");
+			globalContext.addItem(new ContextMenuItem("Create Post-It", (target, x, y) => {
+				let postIt = DEFAULT_POST_IT;
+				postIt.x = x;
+				postIt.y = y;
+				createPostit(postIt);
+			}, "assets/postit.png"));
+			CONTEXT.addContextMenu(globalContext);
+			
+			const DEFAULT_POST_IT = {
+				x: (window.innerWidth / 2) - 50,
+				y: (window.innerHeight / 2) - 50,
+				width: 100,
+				height: 100,
+				background: "#FFF176",
+				text: ""
+			};
+			
+			function loadPostIts()
+			{
+				if(STORAGE.getItem(POST_ITS_ITEM) != null)
+				{
+					let postIts = JSON.parse(STORAGE.getItem(POST_ITS_ITEM));
+					for(let i = 0; i < postIts.length; i++)
+					{
+						createPostit(postIts[i]);
+					}
+				}
+			}
+			
+			function postItToElement(postIt)
+			{
+				let currentId = id++;
+				
+				let root = createPostitRoot(postIt, id);
+				
+				let content = createPostitContent(postIt, root);
+				
+				let grabber = createPostitGrabber(postIt, root);
+				let resizer = createPostitResizer(postIt, root);
+				
+				let editContainer = createPostitEditContainer(postIt, root);
+				
+				let picker = createPostitColorPicker(postIt, root);	
+				let trash = createPostitTrash(postIt, root);
+				
+				editContainer.appendChild(picker);
+				editContainer.appendChild(trash);
+				
+				root.appendChild(content);
+				root.appendChild(grabber);
+				root.appendChild(resizer);
+				root.appendChild(editContainer);
+				
+				return root;
+			}
+			
+			function createPostitRoot(postIt, id)
+			{
+				let root = document.createElement("div");
+				
+				root.id = id;
+				
+				root.classList.add(POST_IT_CLASS);
+				root.classList.add("absolute");				
+				
+				root.style.padding = "30px";
+				root.style.left = postIt.x + "px";
+				root.style.top = postIt.y + "px";
+				root.style.width = postIt.width + "px";
+				root.style.height = postIt.height + "px";
+				root.style.backgroundColor = postIt.background;
+				
+				root.setAttribute(CONTEXT.CONTEXT_ATTRIBUTE, "postIt");
+
+				root.addEventListener("focusout", function(){
+					savePostIts();
+				});
+				
+				CONTEXT.addContextListener(root);
+				
+				return root;
+			}
+			
+			function createPostitContent(postIt, root)
+			{
+				let content = document.createElement("textarea");
+				
+				content.id = CONTENT_ID_PREFIX + root.id;
+				
+				content.classList.add(CONTENT_CLASS);
+				content.classList.add("no-background");
+				content.classList.add("no-border");
+				content.classList.add("full-size");
+				content.classList.add("unresizable");
+				content.classList.add("horizontally-unscrollable");
+				content.classList.add("vertically-optionally-scrollable");
+				content.classList.add("ellipsis-text");
+				content.classList.add("break-word");
+				content.classList.add("monospace");
+				content.classList.add("dark-text");
+				
+				content.value = postIt.text;
+				
+				return content;
+			}
+			
+			function createPostitGrabber(postIt, root)
+			{
+				let grabber = document.createElement("img");
+				
+				grabber.classList.add(GRABBER_CLASS);
+				grabber.classList.add("corner-top-left");
+				grabber.classList.add("block");
+				grabber.classList.add("grab-cursor");
+				grabber.classList.add("centered-origin");
+				grabber.classList.add("unselectable");
+				
+				grabber.setAttribute("src", "assets/pin.png");
+				grabber.setAttribute(MOVABLE.LANDING_ATTRIBUTE, "board");
+				grabber.setAttribute(MOVABLE.STYLE_ATTRIBUTE, MOVABLE.CONTINUOUS);
+				grabber.setAttribute(MOVABLE.TARGET_ATTRIBUTE, root.id);
+				grabber.setAttribute(MOVABLE.OVERLAP_ATTRIBUTE, "true");
+				
+				grabber.style.transform = "translate(-66%, -66%)";
+				
+				MOVABLE.addMover(grabber);
+				
+				return grabber;
+			}
+			
+			function createPostitResizer(postIt, root)
+			{
+				let resizer = document.createElement("span");
+				
+				resizer.classList.add(RESIZER_CLASS);
+				resizer.classList.add("corner-bottom-right");
+				resizer.classList.add("block");
+				resizer.classList.add("north-west-south-east-resize-cursor");
+				resizer.classList.add("unselectable");
+								
+				resizer.setAttribute(RESIZABLE.RESIZE_ATTRIBUTE, root.id);
+				resizer.setAttribute(RESIZABLE.STYLE_ATTRIBUTE, RESIZABLE.CONTINUOUS);
+				
+				RESIZABLE.addResizer(resizer);
+				
+				return resizer;
+			}
+			
+			function createPostitEditContainer(postIt, root)
+			{
+				let container = document.createElement("span");
+				
+				container.classList.add("row-layout");
+				container.classList.add("end-aligned-layout");
+				container.classList.add("center-justified-content");
+				container.classList.add("corner-top-right");
+				container.classList.add("unselectable");
+								
+				container.style.margin = "5px";
+				
+				return container;
+			}
+			
+			function createPostitColorPicker(postIt, root)
+			{
+				let picker = document.createElement("img");
+				
+				picker.classList.add(PICKER_CLASS);
+				picker.classList.add("block")
+				picker.classList.add("pointer-cursor");
+				picker.classList.add("unselectable");
+				
+				picker.setAttribute("src", "assets/color-picker.png")
+				picker.setAttribute(PICKER.PICKER_ATTRIBUTE, "#F06292 #FFF176 #4DD0E1 #FFB74D");
+				picker.setAttribute(PICKER.COLOR_ATTRIBUTE, postIt.background);
+				picker.setAttribute(PICKER.ID_ATTRIBUTE, PICKER_ID_PREFIX + root.id);
+				
+				picker.addEventListener("change", () => {
+					root.style.backgroundColor = picker.getAttribute(PICKER.COLOR_ATTRIBUTE);
+				});
+				
+				PICKER.addPicker(picker);		
+				
+				return picker;
+			}
+			
+			function createPostitTrash(postIt, root)
+			{
+				let trash = document.createElement("img");
+				
+				trash.classList.add(TRASH_CLASS);
+				trash.classList.add("block");
+				trash.classList.add("pointer-cursor");
+				trash.classList.add("unselectable");
+				
+				trash.setAttribute("src", "assets/trash.png");
+				
+				trash.addEventListener("click", () => {
+					askAndRemovePostIt(root);
+				});
+				
+				return trash;
+			}
+			
+			function savePostIts()
+			{
+				let postIts = [];
+				
+				getAllPostIts().forEach((element) => {
+					postIts.push(elementToPostIt(element));
+				});
+				
+				STORAGE.setItem(POST_ITS_ITEM, JSON.stringify(postIts));
+			}
+			
+			function getAllPostIts()
+			{
+				return document.querySelectorAll("." + POST_IT_CLASS);
+			}
+			
+			function elementToPostIt(element)
+			{
+				let postIt = {};
+				
+				postIt.x = parseInt(element.style.left);
+				postIt.y = parseInt(element.style.top);
+				
+				postIt.width = parseInt(element.style.width);
+				postIt.height = parseInt(element.style.height);
+				
+				let background = element.style.backgroundColor;
+				if(background.startsWith("rgb"))
+				{
+					postIt.background = cssRgbToHex(background);
+				}
+				else
+				{				
+					postIt.background = background;
+				}
+				
+				postIt.text = document.getElementById(CONTENT_ID_PREFIX + element.id).value;
+				
+				return postIt;
+			}
+			
+			function cssRgbToHex(color)
+			{
+				let rgb = color.substring(4, color.length - 1).split(", ");
+				return rgbToHex(parseInt(rgb[0]), parseInt(rgb[1]), parseInt(rgb[2]));
+			}
+			
+			function rgbToHex(r, g, b)
+			{
+				return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+			}
+			
+			function componentToHex(c)
+			{
+				var hex = c.toString(16);
+				return hex.length == 1 ? "0" + hex : hex;
+			}
+			
+			function createPostit(postIt)
+			{				
+				let toUse = postIt || DEFAULT_POST_IT;
+				document.body.appendChild(postItToElement(toUse));
+			}
+			
+			function removePostIts()
+			{
+				getAllPostIts().forEach((postIt) => {
+					removePostIt(postIt);
+				});
+			}
+			
+			function askAndRemovePostIt(root)
+			{
+				if(confirm("Are you sure to delete the Post-It ?"))
+				{
+					removePostIt(root);
+				}
+			}
+			
+			function removePostIt(postIt)
+			{
+				let picker = document.getElementById(PICKER_ID_PREFIX + postIt.id);
+				if(picker != undefined)
+				{
+					picker.remove();
+				}
+				
+				postIt.remove();
+			}
+			
+			function provideAutoSave()
+			{
+				setTimeout(() => {
+					savePostIts();
+					provideAutoSave();
+				}, 5000);
+			}
+			
+			window.addEventListener("load", function(){
+				loadPostIts();
+				document.getElementById("create").addEventListener("click", () => { createPostit(); });
+				provideAutoSave();
+			});
+			
+			window.addEventListener("storage", function(event){
+				removePostIts();
+				loadPostIts();
+			});
+		</script>
+	</head>
+	
+	<body id="board" class="full-background full-size unscrollable" style="background-image: url(assets/background.jpg);" contextmenu="global">
+		<img id="create" class="corner-top-right circle pointer-cursor light" style="width: 24px; margin: 12px; padding: 12px;" src="assets/postit.png" />
+	</body>
+</html>
